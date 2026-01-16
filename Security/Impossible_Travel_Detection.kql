@@ -1,0 +1,61 @@
+// Title: Impossible Travel Detection
+// Description: Detects sign-ins from geographically distant locations within a short time window, indicating potential credential theft or account compromise. Flags users logging in from locations that would be impossible to travel between.
+// Category: Security
+
+let TimeWindow = 24h;
+let MinTimeBetweenLogons = 30m;  // Minimum time for suspicious activity
+let MaxTimeBetweenLogons = 6h;   // Maximum window to check for impossible travel
+SigninLogs
+| where TimeGenerated > ago(TimeWindow)
+| where ResultType == 0  // Successful sign-ins only
+| where isnotempty(Location)
+// Extract location details
+| extend City = tostring(LocationDetails.city)
+| extend State = tostring(LocationDetails.state)
+| extend Country = tostring(LocationDetails.countryOrRegion)
+| extend Latitude = toreal(LocationDetails.geoCoordinates.latitude)
+| extend Longitude = toreal(LocationDetails.geoCoordinates.longitude)
+| where isnotempty(Latitude) and isnotempty(Longitude)
+// Get previous sign-in for each user
+| sort by UserPrincipalName, TimeGenerated asc
+| extend PrevTime = prev(TimeGenerated, 1)
+| extend PrevLatitude = prev(Latitude, 1)
+| extend PrevLongitude = prev(Longitude, 1)
+| extend PrevCity = prev(City, 1)
+| extend PrevCountry = prev(Country, 1)
+| extend PrevUser = prev(UserPrincipalName, 1)
+// Only compare consecutive logins for the same user
+| where UserPrincipalName == PrevUser
+| where isnotempty(PrevLatitude) and isnotempty(PrevLongitude)
+// Calculate time difference between logins
+| extend TimeDiffMinutes = datetime_diff('minute', TimeGenerated, PrevTime)
+| where TimeDiffMinutes >= toint(MinTimeBetweenLogons / 1m)
+| where TimeDiffMinutes <= toint(MaxTimeBetweenLogons / 1m)
+// Calculate distance using Haversine formula (in miles: Earth radius = 3959 miles)
+| extend DistanceMiles = 2 * 3959 * asin(sqrt(
+    pow(sin(radians(Latitude - PrevLatitude) / 2), 2) +
+    cos(radians(PrevLatitude)) * cos(radians(Latitude)) *
+    pow(sin(radians(Longitude - PrevLongitude) / 2), 2)
+))
+// Calculate required speed (mph)
+| extend RequiredSpeedMph = (DistanceMiles / TimeDiffMinutes) * 60
+// Flag impossible travel (faster than 500 mph - commercial jet speed)
+| where RequiredSpeedMph > 500
+| project
+    TimeGenerated,
+    UserPrincipalName,
+    CurrentLocation = strcat(City, ", ", Country),
+    PreviousLocation = strcat(PrevCity, ", ", PrevCountry),
+    TimeBetweenLoginsMinutes = TimeDiffMinutes,
+    DistanceMiles = round(DistanceMiles, 0),
+    RequiredSpeedMph = round(RequiredSpeedMph, 0),
+    IPAddress,
+    AppDisplayName,
+    DeviceDetail,
+    UserAgent
+| extend RiskLevel = case(
+    RequiredSpeedMph > 3000, "Critical",  // Teleportation-level impossible
+    RequiredSpeedMph > 1200, "High",
+    "Medium"
+)
+| order by RequiredSpeedMph desc

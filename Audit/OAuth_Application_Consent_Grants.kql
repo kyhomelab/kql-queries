@@ -1,0 +1,64 @@
+// Title: OAuth Application Consent Grants
+// Description: Tracks when users or admins grant permissions to OAuth applications. Useful for detecting illicit consent grant attacks where attackers trick users into granting malicious apps access to their data.
+// Category: Audit
+
+let TimeWindow = 7d;
+// High-risk permissions that warrant extra scrutiny
+let HighRiskPermissions = dynamic([
+    "Mail.Read",
+    "Mail.ReadWrite",
+    "Mail.Send",
+    "Files.ReadWrite.All",
+    "Directory.ReadWrite.All",
+    "User.ReadWrite.All",
+    "offline_access"
+]);
+AuditLogs
+| where TimeGenerated > ago(TimeWindow)
+| where OperationName has_any (
+    "Consent to application",
+    "Add delegated permission grant",
+    "Add app role assignment grant to user",
+    "Add OAuth2PermissionGrant"
+)
+// Extract application details
+| extend AppName = tostring(TargetResources[0].displayName)
+| extend AppId = tostring(TargetResources[0].id)
+// Extract who granted consent
+| extend ConsentGrantedBy = coalesce(
+    tostring(InitiatedBy.user.userPrincipalName),
+    tostring(InitiatedBy.app.displayName),
+    "Unknown"
+)
+| extend ConsentGrantedById = coalesce(
+    tostring(InitiatedBy.user.id),
+    tostring(InitiatedBy.app.appId)
+)
+// Extract permissions granted
+| extend PermissionsGranted = tostring(TargetResources[0].modifiedProperties)
+| extend ConsentType = case(
+    OperationName has "admin", "Admin Consent",
+    OperationName has "delegated", "Delegated",
+    "User Consent"
+)
+// Check for high-risk permissions
+| extend ContainsHighRiskPermission = PermissionsGranted has_any (HighRiskPermissions)
+| extend RiskLevel = case(
+    ContainsHighRiskPermission and ConsentType == "Admin Consent", "Critical",
+    ContainsHighRiskPermission, "High",
+    ConsentType == "Admin Consent", "Medium",
+    "Low"
+)
+| project
+    TimeGenerated,
+    OperationName,
+    AppName,
+    AppId,
+    ConsentGrantedBy,
+    ConsentType,
+    RiskLevel,
+    ContainsHighRiskPermission,
+    PermissionsGranted,
+    Result,
+    CorrelationId
+| order by TimeGenerated desc

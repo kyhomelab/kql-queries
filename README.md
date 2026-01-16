@@ -49,6 +49,7 @@ Advanced threat detection and vulnerability management queries for proactive sec
 | **Critical_Software_Vulnerabilities_V1.kql** | Lists devices with critical CVEs and counts vulnerabilities per device | Prioritize patch management, vulnerability remediation |
 | **Critical_Software_Vulnerabilities_V2.kql** | Enhanced vulnerability tracking with additional filtering | Advanced vulnerability management workflows |
 | **Suspicious_PowerShell_Execution.kql** | Detects potentially malicious PowerShell commands using encoded commands, web downloads, or obfuscation | Identify fileless malware, script-based attacks, and malicious automation |
+| **Impossible_Travel_Detection.kql** | Detects sign-ins from geographically distant locations within a short time window using Haversine distance calculation | Detect credential theft, account compromise, session hijacking |
 
 ### Audit
 
@@ -58,6 +59,7 @@ Compliance monitoring and change tracking queries for governance and regulatory 
 |-------|-------------|----------|
 | **Conditional_Access_Policy_Changes.kql** | Monitors creation, modification, and deletion of Conditional Access policies | Track security policy drift, compliance auditing, change management |
 | **Admin_Role_Assignment_Changes.kql** | Tracks administrative role assignments and privilege escalations | Detect unauthorized privilege escalation, insider threat monitoring |
+| **OAuth_Application_Consent_Grants.kql** | Tracks when users or admins grant permissions to OAuth applications | Detect illicit consent grant attacks, monitor third-party app access |
 
 ### Identity
 
