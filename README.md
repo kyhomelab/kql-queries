@@ -50,6 +50,8 @@ Advanced threat detection and vulnerability management queries for proactive sec
 | **Critical_Software_Vulnerabilities_V2.kql** | Enhanced vulnerability tracking with additional filtering | Advanced vulnerability management workflows |
 | **Suspicious_PowerShell_Execution.kql** | Detects potentially malicious PowerShell commands using encoded commands, web downloads, or obfuscation | Identify fileless malware, script-based attacks, and malicious automation |
 | **Impossible_Travel_Detection.kql** | Detects sign-ins from geographically distant locations within a short time window using Haversine distance calculation | Detect credential theft, account compromise, session hijacking |
+| **MFA_Fatigue_Detection.kql** | Detects repeated MFA push notifications to a single user indicating a push-bombing attack | Detect MFA fatigue attacks, credential compromise with MFA bypass attempts |
+| **Suspicious_Mailbox_Rule_Creation.kql** | Detects creation of mailbox rules that forward, delete, or hide emails matching attacker post-compromise patterns | Detect BEC attacks, email exfiltration, persistence via inbox rule manipulation |
 
 ### Audit
 

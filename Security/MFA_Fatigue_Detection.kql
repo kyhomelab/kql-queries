@@ -1,0 +1,58 @@
+// Title: MFA Fatigue Detection (Push Bombing)
+// Description: Detects repeated MFA push notifications to a single user within a short time window,
+//   which may indicate an MFA fatigue (push bombing) attack where an attacker repeatedly triggers
+//   MFA prompts hoping the user will approve one out of frustration.
+// Category: Security
+
+let TimeWindow = 24h;
+let MfaPromptThreshold = 5;
+let ShortBurstWindow = 10m;
+let ShortBurstThreshold = 3;
+// MFA-related result types and authentication details
+let MfaResultTypes = dynamic(["50074", "50076", "500121"]);
+// 50074 = Strong authentication required
+// 50076 = MFA required, user did not pass
+// 500121 = Authentication failed during MFA challenge
+SigninLogs
+| where TimeGenerated > ago(TimeWindow)
+| where ResultType in (MfaResultTypes) or
+    (AuthenticationRequirement == "multiFactorAuthentication" and ResultType != 0)
+| extend
+    City = tostring(LocationDetails.city),
+    State = tostring(LocationDetails.state),
+    Country = tostring(LocationDetails.countryOrRegion),
+    SourceIP = IPAddress
+| summarize
+    MfaPromptCount = count(),
+    DistinctIPs = dcount(SourceIP),
+    SourceIPs = make_set(SourceIP, 10),
+    Applications = make_set(AppDisplayName, 5),
+    Locations = make_set(strcat(City, ", ", Country), 5),
+    FailureCodes = make_set(ResultType),
+    FirstPrompt = min(TimeGenerated),
+    LastPrompt = max(TimeGenerated)
+    by UserPrincipalName
+| where MfaPromptCount >= MfaPromptThreshold
+| extend
+    TimeSpan = LastPrompt - FirstPrompt,
+    PromptsPerHour = round(MfaPromptCount / max_of(datetime_diff('hour', LastPrompt, FirstPrompt), 1) * 1.0, 1)
+| extend RiskLevel = case(
+    MfaPromptCount >= 20 or PromptsPerHour >= 10, "Critical",
+    MfaPromptCount >= 10 or DistinctIPs > 3, "High",
+    MfaPromptCount >= 5, "Medium",
+    "Low"
+    )
+| project
+    UserPrincipalName,
+    MfaPromptCount,
+    PromptsPerHour,
+    DistinctIPs,
+    SourceIPs,
+    Applications,
+    Locations,
+    FailureCodes,
+    FirstPrompt,
+    LastPrompt,
+    TimeSpan,
+    RiskLevel
+| order by MfaPromptCount desc

@@ -1,0 +1,60 @@
+// Title: Suspicious Mailbox Rule Creation
+// Description: Detects the creation or modification of Outlook/Exchange mailbox rules that
+//   match patterns commonly used by attackers after account compromise. Attackers often create
+//   inbox rules to forward emails externally, delete security notifications, or hide their
+//   activity from the legitimate user.
+// Category: Security
+
+let TimeWindow = 7d;
+// Suspicious rule actions and keywords
+let SuspiciousKeywords = dynamic([
+    "forward", "redirect", "delete", "move to deleted",
+    "junk", "RSS Feeds", "RSS Subscriptions"
+]);
+let SuspiciousSubjectKeywords = dynamic([
+    "password", "security", "MFA", "verification", "invoice",
+    "payment", "hack", "phish", "alert", "suspicious"
+]);
+OfficeActivity
+| where TimeGenerated > ago(TimeWindow)
+| where Operation in ("New-InboxRule", "Set-InboxRule", "Enable-InboxRule", "UpdateInboxRules")
+| extend
+    RuleParameters = tostring(Parameters),
+    ClientIP = ClientIP,
+    RuleName = case(
+        isnotempty(tostring(parse_json(Parameters)[?Name == "Name"].Value)),
+        tostring(parse_json(Parameters)[?Name == "Name"].Value),
+        "Unknown"
+    )
+| extend
+    ForwardsToExternal = RuleParameters has_any ("ForwardTo", "ForwardAsAttachmentTo", "RedirectTo"),
+    DeletesMessages = RuleParameters has_any ("DeleteMessage", "MoveToFolder", "Deleted Items"),
+    TargetsSecurityEmails = RuleParameters has_any (SuspiciousSubjectKeywords),
+    MovesToHiddenFolder = RuleParameters has_any ("RSS Feeds", "RSS Subscriptions", "Junk")
+| extend SuspiciousIndicators = toint(ForwardsToExternal) +
+    toint(DeletesMessages) +
+    toint(TargetsSecurityEmails) +
+    toint(MovesToHiddenFolder)
+| where SuspiciousIndicators > 0
+| extend RiskLevel = case(
+    ForwardsToExternal and TargetsSecurityEmails, "Critical",
+    ForwardsToExternal, "High",
+    DeletesMessages and TargetsSecurityEmails, "High",
+    MovesToHiddenFolder, "Medium",
+    DeletesMessages, "Medium",
+    "Low"
+    )
+| project
+    TimeGenerated,
+    UserId,
+    Operation,
+    RuleName,
+    ForwardsToExternal,
+    DeletesMessages,
+    TargetsSecurityEmails,
+    MovesToHiddenFolder,
+    SuspiciousIndicators,
+    RiskLevel,
+    ClientIP,
+    RuleParameters
+| order by RiskLevel asc, TimeGenerated desc
