@@ -1,0 +1,32 @@
+// Title: Tor Activity Hunt
+// Description: Hunts for Tor browser installation, execution, and active connections to Tor network ports across endpoints.
+// Category: Security
+
+let TorConnections = DeviceNetworkEvents
+| where RemotePort in (9001, 9030, 9040, 9050, 9051, 9150)
+    or InitiatingProcessFolderPath has_any ("Tor Browser", "TorBrowser")
+    or InitiatingProcessFileName == "tor.exe";
+let TorFiles = DeviceFileEvents
+| where FolderPath has_any ("Tor Browser", "TorBrowser")
+    or FileName has_any ("tor.exe", "torrc", "torbrowser-install", "tor-browser")
+    or FileName has "tor-win64";
+let TorProcesses = DeviceProcessEvents
+| where FolderPath has_any ("Tor Browser", "TorBrowser")
+    or FileName == "tor.exe"
+| where ProcessCommandLine !has "-contentproc";
+let TorSoftware = DeviceTvmSoftwareInventory
+| where SoftwareName has "tor"
+    or SoftwareName has "torbrowser";
+union
+    (TorConnections | extend Evidence = "Network Connection", Detail = strcat(RemoteIP, ":", RemotePort)),
+    (TorFiles | extend Evidence = "File Artifact", Detail = strcat(FolderPath, @"\", FileName)),
+    (TorProcesses | extend Evidence = "Process Execution", Detail = FolderPath),
+    (TorSoftware | extend Evidence = "Installed Software", Detail = strcat(SoftwareName, " ", SoftwareVersion))
+| summarize
+    EvidenceTypes = make_set(Evidence),
+    Details = make_set(Detail),
+    FirstSeen = min(Timestamp),
+    LastSeen = max(Timestamp),
+    EventCount = count()
+    by DeviceName
+| sort by EventCount desc

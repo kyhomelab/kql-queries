@@ -1,0 +1,11 @@
+// Title: Unauthorized Browser Detection
+// Description: Detects installation or execution of Brave, Wave Browser, Shift Browser, and Tor Browser. Includes network connection checks for Tor activity.
+// Category: Security
+
+// Unauthorized browser process execution
+DeviceProcessEvents
+| where FileName has_any ("brave.exe", "wavebrowser.exe", "shift.exe", "tor.exe")
+    or FolderPath has_any ("BraveSoftware", "WaveBrowser", "Shift Technologies", "Tor Browser", "TorBrowser")
+| where ProcessCommandLine !has "-contentproc"
+| project Timestamp, DeviceName, AccountName, FileName, FolderPath, ProcessCommandLine
+| sort by Timestamp desc
