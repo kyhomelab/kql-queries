@@ -1,0 +1,33 @@
+// Title: LOLBin Remote Payload Execution
+// Description: Hunts for living-off-the-land binaries (rundll32, regsvr32, mshta, msiexec) executing remote or URL-based payloads — a common technique for proxy execution and AV bypass.
+// Category: Security
+// MITRE: T1218 (Signed Binary Proxy Execution)
+
+DeviceProcessEvents
+| where TimeGenerated > ago(7d)
+| where FileName in~ ("rundll32.exe", "regsvr32.exe", "mshta.exe", "msiexec.exe")
+// Look for remote indicators in command line
+| where ProcessCommandLine has_any ("http://", "https://", "\\\\", "ftp://")
+    or ProcessCommandLine matches regex @"(?i)scrobj\.dll"     // regsvr32 scriptlet abuse (Squiblydoo)
+    or ProcessCommandLine has "javascript:"
+    or ProcessCommandLine has "vbscript:"
+// Exclude common false positives — tune for your environment
+| where InitiatingProcessFileName !in~ ("msiexec.exe", "trustedinstaller.exe", "ccmexec.exe")
+| extend Technique = case(
+    FileName =~ "regsvr32.exe" and ProcessCommandLine has "scrobj.dll", "Squiblydoo (regsvr32 scriptlet)",
+    FileName =~ "mshta.exe" and ProcessCommandLine has_any ("http", "javascript:", "vbscript:"), "MSHTA remote script",
+    FileName =~ "rundll32.exe" and ProcessCommandLine has "javascript:", "Rundll32 JavaScript",
+    FileName =~ "msiexec.exe" and ProcessCommandLine has_any ("http://", "https://"), "MSI remote install",
+    "LOLBin remote payload"
+)
+| project
+    TimeGenerated,
+    DeviceName,
+    AccountName,
+    Technique,
+    LOLBin = FileName,
+    ParentProcess = InitiatingProcessFileName,
+    ParentCommandLine = InitiatingProcessCommandLine,
+    CommandLine = ProcessCommandLine,
+    SHA256
+| order by TimeGenerated desc

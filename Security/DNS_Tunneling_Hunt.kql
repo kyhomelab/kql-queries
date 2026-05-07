@@ -1,0 +1,40 @@
+// Title: DNS Tunneling / Long Subdomain Hunt
+// Description: Hunts for DNS queries with abnormally long subdomains, high entropy, or excessive query volume to a single parent domain — indicators of DNS tunneling, C2, or exfiltration.
+// Category: Security
+// MITRE: T1071.004 (Application Layer Protocol: DNS), T1048.003 (Exfiltration Over Unencrypted Non-C2 Protocol)
+
+DeviceNetworkEvents
+| where TimeGenerated > ago(24h)
+| where ActionType == "DnsConnectionInspected" or RemotePort == 53
+| extend QueriedDomain = tostring(parse_json(AdditionalFields).query)
+| where isnotempty(QueriedDomain)
+// Extract the parent domain (last two labels — naive but works for most cases)
+| extend Labels = split(QueriedDomain, ".")
+| extend ParentDomain = strcat(tostring(Labels[array_length(Labels)-2]), ".", tostring(Labels[array_length(Labels)-1]))
+| extend Subdomain = substring(QueriedDomain, 0, strlen(QueriedDomain) - strlen(ParentDomain) - 1)
+| extend SubdomainLength = strlen(Subdomain)
+// Flag long subdomains (typical tunneling chunks 30+ chars) and high label count
+| where SubdomainLength >= 30 or array_length(Labels) >= 6
+// Exclude well-known high-entropy services (CDN, telemetry) — tune for your environment
+| where ParentDomain !endswith "akamai.net"
+    and ParentDomain !endswith "cloudfront.net"
+    and ParentDomain !endswith "azureedge.net"
+    and ParentDomain !endswith "trafficmanager.net"
+    and ParentDomain !endswith "windows.com"
+    and ParentDomain !endswith "office.com"
+| summarize
+    QueryCount = count(),
+    UniqueSubdomains = dcount(Subdomain),
+    MaxSubdomainLength = max(SubdomainLength),
+    AvgSubdomainLength = avg(SubdomainLength),
+    SampleQueries = make_set(QueriedDomain, 5),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated)
+    by DeviceName, ParentDomain
+| where UniqueSubdomains >= 20 or MaxSubdomainLength >= 50
+| extend Suspicion = case(
+    UniqueSubdomains >= 100 and MaxSubdomainLength >= 50, "High",
+    UniqueSubdomains >= 50 or MaxSubdomainLength >= 60, "Medium",
+    "Low"
+)
+| order by UniqueSubdomains desc

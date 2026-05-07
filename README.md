@@ -52,6 +52,10 @@ Advanced threat detection and vulnerability management queries for proactive sec
 | **Impossible_Travel_Detection.kql** | Detects sign-ins from geographically distant locations within a short time window using Haversine distance calculation | Detect credential theft, account compromise, session hijacking |
 | **MFA_Fatigue_Detection.kql** | Detects repeated MFA push notifications to a single user indicating a push-bombing attack | Detect MFA fatigue attacks, credential compromise with MFA bypass attempts |
 | **Suspicious_Mailbox_Rule_Creation.kql** | Detects creation of mailbox rules that forward, delete, or hide emails matching attacker post-compromise patterns | Detect BEC attacks, email exfiltration, persistence via inbox rule manipulation |
+| **LOLBin_Remote_Payload_Execution.kql** | Hunts rundll32/regsvr32/mshta/msiexec executing remote or URL-based payloads (incl. Squiblydoo) | Detect signed binary proxy execution (T1218), AV bypass, initial access payloads |
+| **Defender_Tampering.kql** | Detects disabling of Defender real-time protection and addition of suspicious path/process/extension exclusions | Detect pre-ransomware staging, T1562.001 impair defenses |
+| **DNS_Tunneling_Hunt.kql** | Surfaces DNS queries with abnormally long subdomains or high unique-subdomain counts per parent domain | Detect DNS tunneling C2, data exfiltration over DNS (T1071.004) |
+| **Rare_Parent_Child_Process.kql** | Builds a 14-day baseline of parent-child process pairs and flags rare execution chains involving common interpreters/LOLBins in the last 24h | Catch novel execution chains (e.g., winword.exe -> powershell.exe), anomaly-based hunting |
 
 ### Audit
 

@@ -1,0 +1,43 @@
+// Title: Rare Parent-Child Process Relationships
+// Description: Builds a 14-day baseline of parent-child process pairs, then surfaces pairs seen in the last 24h that are rare org-wide. Useful for catching novel execution chains (e.g., winword.exe -> powershell.exe).
+// Category: Security
+// MITRE: T1059 (Command and Scripting Interpreter), T1204 (User Execution)
+
+let LookbackBaseline = 14d;
+let RecentWindow = 24h;
+let RarityThreshold = 5;   // pair occurred fewer than N times in the baseline period
+// Build baseline of parent-child pairs (excluding the recent window itself)
+let Baseline =
+    DeviceProcessEvents
+    | where TimeGenerated between (ago(LookbackBaseline) .. ago(RecentWindow))
+    | where isnotempty(InitiatingProcessFileName) and isnotempty(FileName)
+    | summarize BaselineCount = count(), BaselineDevices = dcount(DeviceName)
+        by ParentProcess = tolower(InitiatingProcessFileName), ChildProcess = tolower(FileName);
+// Recent activity, joined against baseline
+DeviceProcessEvents
+| where TimeGenerated > ago(RecentWindow)
+| where isnotempty(InitiatingProcessFileName) and isnotempty(FileName)
+| extend ParentProcess = tolower(InitiatingProcessFileName), ChildProcess = tolower(FileName)
+| join kind=leftouter Baseline on ParentProcess, ChildProcess
+| extend BaselineCount = coalesce(BaselineCount, 0), BaselineDevices = coalesce(BaselineDevices, 0)
+| where BaselineCount < RarityThreshold
+// Focus on interpreters and tools commonly abused — adjust to taste
+| where ChildProcess in~ (
+    "powershell.exe", "pwsh.exe", "cmd.exe", "wscript.exe", "cscript.exe",
+    "mshta.exe", "rundll32.exe", "regsvr32.exe", "bitsadmin.exe", "certutil.exe",
+    "wmic.exe", "msiexec.exe", "installutil.exe"
+)
+| summarize
+    Occurrences = count(),
+    DevicesAffected = dcount(DeviceName),
+    Users = make_set(AccountName, 10),
+    SampleCommands = make_set(ProcessCommandLine, 5),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated)
+    by ParentProcess, ChildProcess, BaselineCount
+| extend Rarity = case(
+    BaselineCount == 0, "Never seen before",
+    BaselineCount < 2, "Extremely rare",
+    "Rare"
+)
+| order by BaselineCount asc, Occurrences desc

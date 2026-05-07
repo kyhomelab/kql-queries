@@ -1,0 +1,41 @@
+// Title: Microsoft Defender Tampering
+// Description: Detects attempts to disable Defender real-time protection or add suspicious exclusions (path/process/extension) — a common pre-ransomware and post-exploitation step.
+// Category: Security
+// MITRE: T1562.001 (Impair Defenses: Disable or Modify Tools)
+
+let TamperingPatterns = dynamic([
+    "Set-MpPreference -DisableRealtimeMonitoring",
+    "Set-MpPreference -DisableBehaviorMonitoring",
+    "Set-MpPreference -DisableIOAVProtection",
+    "Set-MpPreference -DisableScriptScanning",
+    "Add-MpPreference -ExclusionPath",
+    "Add-MpPreference -ExclusionProcess",
+    "Add-MpPreference -ExclusionExtension",
+    "MpCmdRun.exe -RemoveDefinitions",
+    "sc stop WinDefend",
+    "sc config WinDefend start= disabled",
+    "DisableAntiSpyware"
+]);
+DeviceProcessEvents
+| where TimeGenerated > ago(7d)
+| where ProcessCommandLine has_any (TamperingPatterns)
+    or (FileName =~ "reg.exe" and ProcessCommandLine has "Windows Defender" and ProcessCommandLine has_any ("DisableAntiSpyware", "DisableRealtimeMonitoring"))
+| extend Action = case(
+    ProcessCommandLine has "DisableRealtimeMonitoring", "Real-time protection disabled",
+    ProcessCommandLine has "ExclusionPath", "Path exclusion added",
+    ProcessCommandLine has "ExclusionProcess", "Process exclusion added",
+    ProcessCommandLine has "ExclusionExtension", "Extension exclusion added",
+    ProcessCommandLine has "RemoveDefinitions", "Signature definitions removed",
+    ProcessCommandLine has "WinDefend", "Defender service tampered",
+    "Other Defender tampering"
+)
+| project
+    TimeGenerated,
+    DeviceName,
+    AccountName,
+    Action,
+    Process = FileName,
+    ParentProcess = InitiatingProcessFileName,
+    CommandLine = ProcessCommandLine,
+    SHA256
+| order by TimeGenerated desc
